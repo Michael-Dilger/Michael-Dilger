@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Graph traversal & sampling-based planning explorer</title>
+<style>
+:root{color-scheme:light;--bg:#fafaf7;--fg:#1f2328;--mut:#5b6470;--card:#fff;--bd:#d9dbd4;--wall:#2b2f36;--mud:#b88a5a;--vis:#9cc3ec;--fr:#f2b84b;--path:#1f9d6b;--st:#2a7f3f;--go:#d0453b;--cell:#fff;--acc:#2f6fd0;--acc2:#8a4fd0;--warn:#d9822b;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#16181b;--fg:#e7e9ec;--mut:#99a1ad;--card:#1f2226;--bd:#363a41;--wall:#0b0c0e;--mud:#8a6440;--vis:#2d5a8c;--fr:#c98f1f;--path:#37c48e;--st:#4cc26b;--go:#f0655a;--cell:#272b30;--acc:#6a9eea;--acc2:#b08cf0;--warn:#e8943a}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#16181b;--fg:#e7e9ec;--mut:#99a1ad;--card:#1f2226;--bd:#363a41;--wall:#0b0c0e;--mud:#8a6440;--vis:#2d5a8c;--fr:#c98f1f;--path:#37c48e;--st:#4cc26b;--go:#f0655a;--cell:#272b30;--acc:#6a9eea;--acc2:#b08cf0;--warn:#e8943a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;--m:var(--acc)}
+body[data-mode="s"]{--m:var(--acc2)}
+main{max-width:980px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:0 0 4px}p{margin:.3em 0}.mut{color:var(--mut);font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:12px 0}
+.grp{border-left:4px solid var(--acc);padding:2px 0 2px 10px;margin:6px 0}.grp.s{border-left-color:var(--acc2)}
+.gl{display:block;font-weight:600;font-size:.9rem;margin-bottom:4px}.gl small{font-weight:400;color:var(--mut)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+button,select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:6px 10px;cursor:pointer}
+.tabs button.on{background:var(--acc);color:#fff;border-color:var(--acc)}.grp.s .tabs button.on{background:var(--acc2);border-color:var(--acc2)}
+button.on{background:var(--m);color:#fff;border-color:var(--m)}
+button.warn{background:var(--warn);border-color:var(--warn);color:#fff}.cf{min-width:10.5em}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.mode{border-left:4px solid var(--m);padding-left:10px;margin:0 0 8px;font-size:.88rem;color:var(--mut)}
+#prmctl{border:1px dashed var(--acc2);border-radius:8px;padding:6px 8px}
+canvas{width:100%;height:auto;display:block;border:2px solid var(--m);border-radius:8px;touch-action:none;background:var(--cell)}
+.leg{display:flex;flex-wrap:wrap;gap:12px;font-size:.85rem;color:var(--mut)}.leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px;border:1px solid var(--bd)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;font-variant-numeric:tabular-nums}.stats b{font-size:1.1rem}
+#chal{display:none;margin-top:8px;padding:8px 10px;border-left:4px solid var(--warn);background:var(--bg);border-radius:6px;font-size:.9rem}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:560px}th,td{border-bottom:1px solid var(--bd);padding:6px 8px;text-align:left}tr.s td:first-child{border-left:4px solid var(--acc2)}
+.seg{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}.seg button{border:0;border-radius:0}.gen{border:1px dashed var(--warn);border-radius:8px;padding:6px 8px}
+</style></head><body data-mode="g"><main>
+<h1>Graph traversal & sampling-based planning explorer</h1>
+<p class="mut">Draw walls or mud on the grid, drag the start (S) and goal (G), then watch each method work.</p>
+
+<div class="card">
+ <div class="grp"><span class="gl">Graph traversal <small>searches the grid cells directly</small></span><div class="tabs" id="tg"></div></div>
+ <div class="grp s"><span class="gl">Sampling-based planners <small>build a random roadmap or tree in continuous space</small></span><div class="tabs" id="ts"></div></div>
+ <div id="info" style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+ <div class="mode" id="mode"></div>
+ <div class="row">
+  <button id="play">▶ Play</button><button id="step">Step</button><button id="reset">Reset</button>
+  <label class="mut">Speed <input type="range" id="spd" min="1" max="60" value="12"></label>
+  <label class="mut"><input type="checkbox" id="vals" checked> Show costs</label>
+ </div>
+ <div class="row" id="prmctl" style="display:none"><button id="build">Build roadmap</button><label class="mut" id="nsl">Samples <input type="range" id="ns" min="20" max="2000" value="400" oninput="document.getElementById('nsv').textContent=this.value"> <b id="nsv">400</b></label><label class="mut" id="knl">Neighbours k <input type="range" id="kn" min="2" max="12" value="6" oninput="document.getElementById('knv').textContent=this.value"> <b id="knv">6</b></label><label class="mut" id="palgl">Graph search on roadmap <select id="palg" onchange="reset()"><option value="bfs">BFS</option><option value="dfs">DFS</option><option value="dijkstra">Dijkstra</option><option value="astar" selected>A*</option></select></label></div>
+ <div class="row"><span class="mut">Paint tool:</span><span class="seg">
+  <button data-m="1" class="on">Wall</button><button data-m="2">Mud (cost 5)</button><button data-m="0">Erase</button></span><span class="mut">click or drag on the grid</span></div>
+ <div class="row gen">
+  <button id="rand" class="cf">Random walls</button><button id="maze" class="cf">Generate maze</button><button id="chb" class="cf" style="min-width:15em" title="Builds a map that exposes a weakness or strength of the selected method">Challenge maze</button><button id="clear" class="cf">Clear</button>
+ </div>
+ <canvas id="cv" width="840" height="490"></canvas>
+ <div id="chal"></div>
+ <div class="leg" style="margin-top:8px"><span><i style="background:var(--st)"></i>Start</span><span><i style="background:var(--go)"></i>Goal</span><span><i style="background:var(--fr)"></i>Frontier</span><span><i style="background:var(--vis)"></i>Expanded / tree</span><span><i style="background:var(--path)"></i>Path</span><span><i style="background:var(--mud)"></i>Mud</span></div>
+ <div class="stats" style="margin-top:8px"><span id="lx">Expanded</span><b id="sx">0</b><span>Path length <b id="sl">–</b></span><span>Path cost <b id="sc">–</b></span><span id="msg" class="mut"></span></div>
+</div>
+
+<div class="card scroll"><table>
+<tr><th>Method</th><th>Data structure</th><th>Optimal?</th><th>Uses weights?</th><th>Uses heuristic?</th></tr>
+<tr><td>BFS</td><td>Queue (FIFO)</td><td>Fewest steps only</td><td>No</td><td>No</td></tr>
+<tr><td>DFS</td><td>Stack (LIFO)</td><td>No</td><td>No</td><td>No</td></tr>
+<tr><td>Dijkstra</td><td>Priority queue on g</td><td>Yes</td><td>Yes</td><td>No</td></tr>
+<tr><td>A*</td><td>Priority queue on g + h</td><td>Yes (admissible h)</td><td>Yes</td><td>Yes</td></tr>
+<tr class="s"><td>PRM</td><td>Roadmap (fixed k), then any graph search</td><td>Optimal on the roadmap only</td><td>Edge lengths (mud 5×)</td><td>Depends on search</td></tr>
+<tr class="s"><td>PRM*</td><td>Roadmap (shrinking radius), then any graph search</td><td>Optimal as samples → ∞</td><td>Edge lengths (mud 5×)</td><td>Depends on search</td></tr>
+<tr class="s"><td>RRT</td><td>Random tree</td><td>No (probabilistic)</td><td>Path cost reported</td><td>Goal bias</td></tr>
+<tr class="s"><td>RRT*</td><td>Random tree with parent choice and rewiring</td><td>Optimal as samples → ∞</td><td>Yes (mud 5×)</td><td>Goal bias</td></tr>
+</table></div>
+
+<div class="card" id="teach" style="border-left:4px solid var(--m)"></div>
+
+<script>
+const W=24,H=14,N=W*H,cv=document.getElementById('cv'),ctx=cv.getContext('2d'),$=id=>document.getElementById(id);
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let g=new Uint8Array(N),S=[2,7],G=[21,7],algo='bfs',gen=null,timer=null,st=null,rrt=null,prm=null,ps=null;
+const SAMP=['prm','prmstar','rrt','rrtstar'],isS=()=>SAMP.includes(algo);
+const LAB={bfs:'BFS',dfs:'DFS',dijkstra:'Dijkstra',astar:'A*',prm:'PRM',prmstar:'PRM*',rrt:'RRT',rrtstar:'RRT*'};
+const INFO={
+bfs:['Breadth-first search','Expands cells in rings of equal step count from the start, using a FIFO queue. It finds the path with the fewest steps but is blind to cell costs, so it walks straight through mud.'],
+dfs:['Depth-first search','Dives down one branch as far as it can using a LIFO stack, then backtracks. It uses little memory and always finds a path if one exists, but the path is often long and winding.'],
+dijkstra:['Dijkstra’s algorithm','Always expands the unvisited cell with the lowest cost so far (g). It is optimal with non-negative weights, so it routes around mud, but it explores evenly in every direction.'],
+astar:['A* search','Expands the cell with the lowest f = g + h, where h is a Manhattan-distance estimate to the goal. It stays optimal when h never overestimates, and it usually explores far fewer cells than Dijkstra.'],
+prm:['PRM (probabilistic roadmap)','Two phases. <b>Learn:</b> sample random free points, then connect each to its k nearest neighbours whenever the straight line between them is collision-free (edge cost = length, mud counts 5×). <b>Query:</b> run a graph search (BFS, DFS, Dijkstra or A*, chosen below) on the roadmap from S to G. The roadmap is reusable, so you can compare searches on the <i>same</i> graph. Paths are optimal on the roadmap, not in the real space.'],
+prmstar:['PRM* (asymptotically optimal PRM)','PRM* connects each sample to <i>every</i> neighbour inside a radius that shrinks as the number of samples n grows, r = γ√(ln n / n) in 2D, instead of a fixed k. The roadmap stays connected with high probability and the best path on it converges to the optimal one as n → ∞.'],
+rrt:['RRT (rapidly-exploring random tree)','Samples a random point (sometimes the goal), connects it to the nearest tree node with a short step, and keeps the edge if it is collision-free. It stops at the first path found, or when it reaches the sample limit. It scales to high dimensions but gives rough, non-optimal paths.'],
+rrtstar:['RRT* (asymptotically optimal RRT)','RRT* adds two steps. <b>Choose parent:</b> among tree nodes within radius r of the new node, pick the lowest cost-to-come. <b>Rewire:</b> reconnect any neighbour through the new node if that lowers its cost. It <b>keeps sampling until you pause or reset</b> (no sample limit; it only stops at a 20,000-node memory cap), so the green path keeps improving.']};
+const MODE={g:'Graph traversal mode: the search moves directly between neighbouring grid cells.',s:'Sampling-based mode: random points are sampled in continuous space; walls are only used for collision checks. PRM then runs a graph search on its roadmap.'};
+Object.keys(INFO).forEach(k=>{const b=document.createElement('button');b.textContent=LAB[k];b.dataset.k=k;b.onclick=()=>{algo=k;reset()};$(SAMP.includes(k)?'ts':'tg').appendChild(b)});
+function showInfo(){const s=isS(),pm=algo=='prm'||algo=='prmstar';
+ document.body.dataset.mode=s?'s':'g';$('mode').textContent=MODE[s?'s':'g'];
+ $('prmctl').style.display=s?'flex':'none';$('build').style.display=pm?'':'none';$('palgl').style.display=pm?'':'none';$('knl').style.display=algo=='prm'?'':'none';$('nsl').style.display=algo=='rrtstar'?'none':'';
+ $('info').innerHTML='<b>'+INFO[algo][0]+'</b><p>'+INFO[algo][1]+'</p>';
+ document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.k===algo));$('teach').innerHTML=teachHtml();if($('chb').rf)$('chb').rf()}
+const cost=i=>g[i]==2?5:1,hf=i=>{const[a,b]=xy(i),[c,d]=G;return Math.abs(a-c)+Math.abs(b-d)};
+const idx=(x,y)=>y*W+x,xy=i=>[i%W,(i/W)|0];
+const pc=p=>{let c=0;p.slice(0,-1).forEach(n=>c+=cost(n));return c};
+function nbrs(i){const[x,y]=xy(i),o=[];[[0,-1],[1,0],[0,1],[-1,0]].forEach(([dx,dy])=>{const a=x+dx,b=y+dy;if(a>=0&&b>=0&&a<W&&b<H&&g[idx(a,b)]!=1)o.push(idx(a,b))});return o}
+function* grid(al){
+ const src=idx(...S),dst=idx(...G);
+ const cs=new Array(N).fill(Infinity),par=new Array(N).fill(-1),closed=new Uint8Array(N),seen=new Uint8Array(N);
+ let open=[{n:src,p:-1}],ex=0;cs[src]=0;seen[src]=1;
+ const w=al=='dijkstra'||al=='astar',key=n=>al=='dijkstra'?cs[n]:cs[n]+hf(n);
+ st={cs,closed,par,open,ex:0,cur:-1,path:null};
+ while(open.length){
+  let k=0;
+  if(al=='dfs')k=open.length-1;
+  else if(w){for(let i=1;i<open.length;i++)if(key(open[i].n)<key(open[k].n))k=i}
+  const it=open.splice(k,1)[0],n=it.n;
+  if(closed[n])continue;
+  closed[n]=1;ex++;st.ex=ex;st.cur=n;
+  if(!w){par[n]=it.p;cs[n]=it.p<0?0:cs[it.p]+1}
+  if(n==dst)break;
+  for(const m of nbrs(n)){
+   if(closed[m])continue;
+   if(w){const c=cs[n]+cost(m);if(c<cs[m]){cs[m]=c;par[m]=n;open.push({n:m,p:n})}}
+   else if(al=='dfs'||!seen[m]){seen[m]=1;open.push({n:m,p:n})}
+  }
+  yield;
+ }
+ if(closed[dst]){const p=[];let c=dst;while(c!=-1){p.push(c);c=par[c]}st.path=p}else st.fail=true;
+ st.cur=-1;
+}
+function solve(al){const old=st,it=grid(al);while(!it.next().done);const r=st;st=old;return r}
+const segCost=(a,b)=>{const L=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.ceil(L/.1));let c=0;for(let s=0;s<=n;s++){const x=a[0]+(b[0]-a[0])*s/n,y=a[1]+(b[1]-a[1])*s/n;if(x<0||y<0||x>=W||y>=H)return -1;const v=g[idx(x|0,y|0)];if(v==1)return -1;c+=(v==2?5:1)}return c*L/(n+1)};
+function* rrtGen(star){
+ const N0=+$('ns').value,ST=1.2,T=[{x:S[0]+.5,y:S[1]+.5,p:-1,c:0,ch:[]}],gx=G[0]+.5,gy=G[1]+.5,gn=[],pt=i=>[T[i].x,T[i].y];
+ rrt={T,path:null,star,cost:null,done:false};st={ex:1};
+ const prop=(i,d)=>{const s=[i];while(s.length){const a=s.pop();T[a].c+=d;T[a].ch.forEach(b=>s.push(b))}};
+ const upd=()=>{let b=-1,bc=1e18;gn.forEach(i=>{const w=segCost(pt(i),[gx,gy]);if(w<0)return;const c=T[i].c+w;if(c<bc){bc=c;b=i}});if(b>=0){const p=[];let c=b;while(c!=-1){p.push(c);c=T[c].p}rrt.path=p;rrt.cost=bc}};
+ for(let it=0;star?T.length<20000:it<N0;it++){
+  const r=Math.random()<.08?[gx,gy]:[Math.random()*W,Math.random()*H];
+  let b=0,bd=1e18;T.forEach((t,i)=>{const d=(t.x-r[0])**2+(t.y-r[1])**2;if(d<bd){bd=d;b=i}});
+  const d=Math.sqrt(bd);if(d<.01)continue;
+  const L=Math.min(ST,d),nx=T[b].x+(r[0]-T[b].x)/d*L,ny=T[b].y+(r[1]-T[b].y)/d*L,q=[nx,ny],w0=segCost(pt(b),q);
+  if(w0<0)continue;
+  let par=b,c=T[b].c+w0;const near=[];
+  if(star){const R=Math.min(25.3*Math.sqrt(Math.log(T.length+1)/(T.length+1)),2*ST);
+   T.forEach((t,i)=>{if(Math.hypot(t.x-nx,t.y-ny)<=R){const w=segCost(pt(i),q);if(w>=0)near.push([i,w])}});
+   near.forEach(([i,w])=>{if(T[i].c+w<c){c=T[i].c+w;par=i}})}
+  const ni=T.length;T.push({x:nx,y:ny,p:par,c,ch:[]});T[par].ch.push(ni);
+  if(star)near.forEach(([i,w])=>{if(i==par)return;if(c+w<T[i].c){const o=T[i].p;if(o>=0){const a=T[o].ch;a.splice(a.indexOf(i),1)}T[i].p=ni;T[ni].ch.push(i);prop(i,c+w-T[i].c)}});
+  st={ex:T.length};
+  if(Math.hypot(nx-gx,ny-gy)<1.1)gn.push(ni);
+  if(gn.length&&(gn.length<60||it%10==0))upd();
+  if(!star&&rrt.path){rrt.done=true;return}
+  yield}
+ if(star){upd();rrt.capped=true}
+ if(!rrt.path)st.fail=true;rrt.done=true}
+function buildPRM(){stop();gen=null;st=null;ps=null;const star=algo=='prmstar',n=+$('ns').value,K=+$('kn').value,R=star?Math.min(25.3*Math.sqrt(Math.log(n+2)/(n+2)),8):0;const pts=[[S[0]+.5,S[1]+.5],[G[0]+.5,G[1]+.5]];
+ while(pts.length<n+2){const p=[Math.random()*W,Math.random()*H];if(g[idx(p[0]|0,p[1]|0)]!=1)pts.push(p)}
+ const adj=pts.map(()=>[]);let E=0;
+ pts.forEach((p,i)=>{const nr=[];for(let j=0;j<pts.length;j++){if(j==i)continue;const d=Math.hypot(p[0]-pts[j][0],p[1]-pts[j][1]);if(!star||d<=R)nr.push([d,j])}nr.sort((a,b)=>a[0]-b[0]);nr.slice(0,star?nr.length:K).forEach(([d,j])=>{if(adj[i].some(e=>e[0]==j))return;const c=segCost(p,pts[j]);if(c>=0){adj[i].push([j,c]);adj[j].push([i,c]);E++}})});
+ prm={pts,adj,E,star,R};draw()}
+function* prmGen(){const{pts,adj}=prm,n=pts.length,dst=1,al=$('palg').value;
+ const h=i=>Math.hypot(pts[i][0]-pts[dst][0],pts[i][1]-pts[dst][1]);
+ const cs=new Array(n).fill(Infinity),par=new Array(n).fill(-1),closed=new Uint8Array(n),seen=new Uint8Array(n);
+ let open=[{n:0,p:-1}],ex=0;cs[0]=0;seen[0]=1;
+ const w=al=='dijkstra'||al=='astar',key=m=>al=='dijkstra'?cs[m]:cs[m]+h(m);
+ ps={closed,open,cs,par,cur:-1,ex:0,path:null};
+ while(open.length){let k=0;if(al=='dfs')k=open.length-1;else if(w){for(let i=1;i<open.length;i++)if(key(open[i].n)<key(open[k].n))k=i}
+  const it=open.splice(k,1)[0],u=it.n;if(closed[u])continue;
+  closed[u]=1;ex++;ps.ex=ex;ps.cur=u;
+  if(!w){par[u]=it.p;cs[u]=it.p<0?0:cs[it.p]+adj[it.p].find(e=>e[0]==u)[1]}
+  if(u==dst)break;
+  for(const[m,c]of adj[u]){if(closed[m])continue;
+   if(w){const t=cs[u]+c;if(t<cs[m]){cs[m]=t;par[m]=u;open.push({n:m,p:u})}}
+   else if(al=='dfs'||!seen[m]){seen[m]=1;open.push({n:m,p:u})}}
+  yield}
+ if(closed[dst]){const p=[];let c=dst;while(c!=-1){p.push(c);c=par[c]}ps.path=p}else ps.fail=true;ps.cur=-1}
+function drawPRM(k,col){const{pts,adj}=prm,P=ps;
+ ctx.save();ctx.strokeStyle=col.fg;ctx.globalAlpha=.3;ctx.lineWidth=1;ctx.beginPath();
+ adj.forEach((a,i)=>a.forEach(([j])=>{if(j>i){ctx.moveTo(pts[i][0]*k,pts[i][1]*k);ctx.lineTo(pts[j][0]*k,pts[j][1]*k)}}));ctx.stroke();ctx.restore();
+ if(P){ctx.strokeStyle=col.vis;ctx.lineWidth=3;ctx.beginPath();P.closed.forEach((c,i)=>{if(c&&P.par[i]>=0){ctx.moveTo(pts[P.par[i]][0]*k,pts[P.par[i]][1]*k);ctx.lineTo(pts[i][0]*k,pts[i][1]*k)}});ctx.stroke();
+  if(P.path){ctx.strokeStyle=col.path;ctx.lineWidth=5;ctx.beginPath();P.path.forEach((n,i)=>{i?ctx.lineTo(pts[n][0]*k,pts[n][1]*k):ctx.moveTo(pts[n][0]*k,pts[n][1]*k)});ctx.stroke()}}
+ const fr=new Set(P?P.open.map(o=>o.n):[]);
+ pts.forEach((p,i)=>{const on=P&&(P.closed[i]||fr.has(i));ctx.fillStyle=P&&P.closed[i]?col.vis:fr.has(i)?col.fr:col.fg;ctx.beginPath();ctx.arc(p[0]*k,p[1]*k,on?5:3,0,7);ctx.fill()});
+ if(P&&P.cur>=0){ctx.strokeStyle=col.fg;ctx.lineWidth=3;ctx.beginPath();ctx.arc(pts[P.cur][0]*k,pts[P.cur][1]*k,8,0,7);ctx.stroke()}}
+function drawRRT(k,col){ctx.strokeStyle=col.vis;ctx.lineWidth=1.5;ctx.beginPath();rrt.T.forEach(t=>{if(t.p>=0){const q=rrt.T[t.p];ctx.moveTo(q.x*k,q.y*k);ctx.lineTo(t.x*k,t.y*k)}});ctx.stroke();
+ if(rrt.path){ctx.strokeStyle=col.path;ctx.lineWidth=4;ctx.beginPath();[{x:G[0]+.5,y:G[1]+.5}].concat(rrt.path.map(n=>rrt.T[n])).forEach((t,i)=>{i?ctx.lineTo(t.x*k,t.y*k):ctx.moveTo(t.x*k,t.y*k)});ctx.stroke()}}
+function draw(){
+ const k=cv.width/W;ctx.clearRect(0,0,cv.width,cv.height);
+ const col={wall:css('--wall'),mud:css('--mud'),vis:css('--vis'),fr:css('--fr'),path:css('--path'),st:css('--st'),go:css('--go'),bd:css('--bd'),fg:css('--fg')};
+ const gs=isS()?null:st;
+ for(let i=0;i<N;i++){const[x,y]=xy(i);let c=null;
+  if(g[i]==2)c=col.mud;if(gs&&gs.closed[i])c=col.vis;
+  if(c){ctx.fillStyle=c;ctx.fillRect(x*k,y*k,k,k)}
+  if(g[i]==1){ctx.fillStyle=col.wall;ctx.fillRect(x*k,y*k,k,k)}}
+ if(gs){ctx.fillStyle=col.fr;gs.open.forEach(o=>{if(!gs.closed[o.n]){const[x,y]=xy(o.n);ctx.fillRect(x*k+3,y*k+3,k-6,k-6)}});
+  if(gs.path){ctx.fillStyle=col.path;gs.path.forEach(n=>{const[x,y]=xy(n);ctx.fillRect(x*k+6,y*k+6,k-12,k-12)})}
+  if(gs.cur>=0){const[x,y]=xy(gs.cur);ctx.strokeStyle=col.fg;ctx.lineWidth=3;ctx.strokeRect(x*k+2,y*k+2,k-4,k-4)}}
+ ctx.strokeStyle=col.bd;ctx.lineWidth=1;ctx.beginPath();for(let x=0;x<=W;x++){ctx.moveTo(x*k,0);ctx.lineTo(x*k,H*k)}for(let y=0;y<=H;y++){ctx.moveTo(0,y*k);ctx.lineTo(W*k,y*k)}ctx.stroke();
+ if(gs&&$('vals').checked){ctx.fillStyle=col.fg;ctx.font='11px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';
+  for(let i=0;i<N;i++)if(gs.closed[i]&&gs.cs[i]<1e9){const[x,y]=xy(i);ctx.fillText(gs.cs[i],x*k+k/2,y*k+k/2)}}
+ const pm=algo=='prm'||algo=='prmstar',ok=pm&&prm&&prm.star==(algo=='prmstar');
+ if(ok)drawPRM(k,col);if(algo=='rrt'||algo=='rrtstar'){if(rrt)drawRRT(k,col)}
+ [[S,col.st,'S'],[G,col.go,'G']].forEach(([p,c,l])=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(p[0]*k+k/2,p[1]*k+k/2,k/2.6,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 14px system-ui';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(l,p[0]*k+k/2,p[1]*k+k/2+1)});
+ let ex=0,len='–',cst='–',msg='',lab='Expanded';
+ if(!isS()){if(st){ex=st.ex;if(st.path){len=st.path.length-1;cst=pc(st.path)}if(st.fail)msg='No path found'}}
+ else if(pm){if(!ok)msg='Press Build roadmap (or Play) to sample the roadmap';else{ex=ps?ps.ex:0;msg='Roadmap: '+prm.pts.length+' nodes, '+prm.E+' edges'+(prm.star?', r = '+prm.R.toFixed(2):', k = '+$('kn').value);
+  if(ps&&ps.path){len=(ps.path.length-1)+' edges';cst=ps.cs[ps.path[0]].toFixed(1)}if(ps&&ps.fail)msg+=' · no path found (try more samples or a different roadmap)'}}
+ else{lab='Tree nodes';if(st)ex=st.ex;if(rrt&&rrt.path){len=rrt.path.length-1;cst=rrt.cost.toFixed(1)}
+  if(st&&st.fail)msg='No path found';else if(rrt&&rrt.capped)msg='Node cap (20,000) reached';else if(algo=='rrtstar'&&rrt&&!rrt.done)msg='Sampling… pause or reset to stop'}
+ $('lx').textContent=lab;$('sx').textContent=ex;$('sl').textContent=len;$('sc').textContent=cst;$('msg').textContent=msg;
+}
+function stop(){clearInterval(timer);timer=null;$('play').textContent='▶ Play'}
+function reset(){stop();st=null;rrt=null;ps=null;gen=null;showInfo();draw()}
+const fin=()=>(st&&(st.path||st.fail))||(ps&&(ps.path||ps.fail))||(rrt&&rrt.done);
+function step(nd){if(!gen){if((algo=='prm'||algo=='prmstar')&&(!prm||prm.star!=(algo=='prmstar')))buildPRM();
+  gen=algo=='rrt'||algo=='rrtstar'?rrtGen(algo=='rrtstar'):algo=='prm'||algo=='prmstar'?prmGen():grid(algo)}
+ const r=gen.next();if(r.done)stop();if(!nd||r.done)draw();return r.done}
+function play(){if(timer){stop();return}if(gen&&fin())reset();
+ $('play').textContent='❚❚ Pause';
+ const tick=()=>{const sv=+$('spd').value,n=sv<=12?1:Math.round((sv-12)**2/8)+1;for(let i=0;i<n;i++)if(step(i<n-1))return};
+ const iv=()=>1000/Math.min($('spd').value,12);
+ timer=setInterval(tick,iv());$('spd').oninput=()=>{if(timer){clearInterval(timer);timer=setInterval(tick,iv())}}}
+$('play').onclick=play;
+$('step').onclick=()=>{stop();if(gen&&fin())reset();step()};
+$('reset').onclick=reset;$('vals').onchange=draw;$('build').onclick=buildPRM;
+const wipe=()=>{prm=null;$('chal').style.display='none'};
+function armBtn(id,label,fn){const b=$(id);let t=null;const L=()=>typeof label=='function'?label():label;
+ b.rf=()=>{if(!t)b.textContent=L()};b.rf();
+ b.onclick=()=>{if(t){clearTimeout(t);t=null;b.classList.remove('warn');b.textContent=L();fn()}else{b.textContent='Sure? Click again';b.classList.add('warn');t=setTimeout(()=>{t=null;b.classList.remove('warn');b.textContent=L()},3000)}}}
+armBtn('clear','Clear',()=>{g.fill(0);wipe();reset()});
+armBtn('rand','Random walls',()=>{g.fill(0);for(let i=0;i<N;i++)if(Math.random()<.22)g[i]=1;g[idx(...S)]=g[idx(...G)]=0;wipe();reset()});
+armBtn('maze','Generate maze',()=>{g.fill(1);const vis=new Uint8Array(N),stk=[[0,0]];vis[0]=1;g[0]=0;
+ while(stk.length){const[x,y]=stk[stk.length-1],o=[[2,0],[-2,0],[0,2],[0,-2]].filter(([dx,dy])=>{const a=x+dx,b=y+dy;return a>=0&&b>=0&&a<W-1&&b<H-1&&!vis[idx(a,b)]});
+  if(!o.length){stk.pop();continue}
+  const[dx,dy]=o[Math.random()*o.length|0],a=x+dx,b=y+dy;vis[idx(a,b)]=1;g[idx(a,b)]=0;g[idx(x+dx/2,y+dy/2)]=0;stk.push([a,b])}
+ for(let y=0;y<H-1;y++)for(let x=0;x<W-1;x++)if((x+y)%2==1&&g[idx(x,y)]==1&&Math.random()<.1)g[idx(x,y)]=0;
+ S[0]=0;S[1]=6;G[0]=22;G[1]=6;wipe();reset()});
+const rect=(x0,y0,x1,y1,v)=>{for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)g[idx(x,y)]=v},sg=(a,b,c,d)=>{S[0]=a;S[1]=b;G[0]=c;G[1]=d},rn=(a,b)=>a+Math.random()*(b-a+1)|0;
+const gapWall=()=>{const y=rn(2,11);rect(11,0,12,13,1);rect(11,y,12,y,0)};
+const mudBand=()=>{rect(9,3,12,11,2);sg(2,7,21,7)};
+const SC={
+bfs(){mudBand();return()=>{const b=solve('bfs'),d=solve('dijkstra');return`BFS finds the fewest-step path (${b.path.length-1} steps) but walks straight through the mud, so its cost is ${pc(b.path)}. Dijkstra pays 5 per mud cell, so it detours: ${d.path.length-1} steps but only cost ${pc(d.path)}. Run both and compare.`}},
+dfs(){const wx=rn(7,9);rect(wx,3,wx,13,1);sg(wx-3,9,wx+3,9);return()=>{const f=solve('dfs'),o=solve('dijkstra'),a=pc(f.path),b=pc(o.path);return a>b?`The best route goes up and over the wall (cost ${b}). DFS returned a path of cost ${a}, ${(a/b).toFixed(1)}× longer, because it returns the first path it reaches and its neighbour order sends it away from the gap first.`:`DFS happened to find the optimal route (cost ${b}) this time. Press Challenge maze again for a new layout: DFS only gets this right if its neighbour order tries the gap early.`}},
+dijkstra(){sg(3,rn(3,10),20,rn(3,10));return()=>{const d=solve('dijkstra'),a=solve('astar');return`Dijkstra returns an optimal path (cost ${pc(d.path)}) but expanded ${d.ex} cells in every direction. A* found a path of cost ${pc(a.path)} with only ${a.ex} expansions, because its heuristic points toward the goal.`}},
+astar(){rect(15,3,15,10,1);rect(9,3,15,3,1);rect(9,10,15,10,1);sg(3,7,21,7);return()=>{const d=solve('dijkstra'),a=solve('astar');return`A* path cost ${pc(a.path)} (Dijkstra: ${pc(d.path)}), with ${a.ex} expansions (Dijkstra: ${d.ex}). The heuristic ignores walls and points straight through the cup, so A* fills the cup before backing out. A good heuristic only helps when it reflects the real obstacles.`}},
+rrt(){gapWall();sg(3,7,20,7);return()=>'Narrow passage: only a thin slice of random samples lands in the 1-cell gap, so RRT may need many samples (raise the slider) and the path it returns is jagged and not optimal.'},
+rrtstar(){rect(11,0,12,13,1);rect(11,7,12,7,0);rect(11,0,12,2,0);sg(3,7,20,7);return()=>'Two gaps: a wide one that is easy to hit (long route) and a 1-cell gap on the direct line (short route). Leave RRT* running: it usually locks onto the wide gap first, and the cost drops once samples reach the narrow one.'},
+prm(){gapWall();sg(3,7,20,7);return()=>'Fixed-k PRM spends its k edges on near neighbours inside each room, so the two sides often end up disconnected at the 1-cell gap. Build several times, raise k, then compare with PRM*.'},
+prmstar(){mudBand();return()=>'A mud band with a free detour along the top. With few samples the roadmap path is jagged and costly; rebuild with more samples and the cost should fall toward the optimum.'}};
+armBtn('chb',()=>LAB[algo]+' Challenge Maze',()=>{g.fill(0);const f=SC[algo]();if(Math.random()<.5){for(let x=0;x<W;x++)for(let y=0;y<H/2;y++){const a=idx(x,y),b=idx(x,H-1-y),t=g[a];g[a]=g[b];g[b]=t}S[1]=H-1-S[1];G[1]=H-1-G[1]}
+ prm=null;reset();const c=$('chal');c.textContent='Challenge ('+LAB[algo]+'): '+f();c.style.display='block'});
+const TEACH={
+bfs:['A band of mud sits across the straight line from S to G, with a free detour above or below it.','BFS counts steps, not costs. Every move looks the same to it, so it returns the path with the fewest steps even when that path crosses expensive mud. It is only optimal when all moves cost the same.','BFS goes straight through the band: fewest steps, but a higher path cost. Dijkstra takes more steps around the mud for a lower cost.','Use Dijkstra (or A*) as soon as edge costs differ.'],
+dfs:['A vertical wall separates S and G, with a gap at one end. The shortest route goes up (away from the goal) and over the wall.','DFS keeps following one branch and returns the first path it reaches. Which path that is depends on its neighbour order, not on cost or distance, so a long winding route is likely. The short route needs a detour away from G, which DFS has no reason to prefer.','Watch DFS wander through the open areas before it finds the gap, then compare its path cost with Dijkstra’s. If DFS happens to be optimal, generate again.','DFS is complete on a finite graph and uses little memory, but it gives no optimality guarantee.'],
+dijkstra:['An open field with S and G on opposite sides and nothing in between.','Dijkstra is optimal but uninformed. It expands every cell that is cheaper to reach than the goal, in all directions, so the explored area grows with the square of the path cost.','A large blue diamond around S. Run A* on the same map and compare the expanded counts in the result box.','Dijkstra is A* with h = 0: optimal, but it pays for having no sense of direction.'],
+astar:['A U-shaped cup of wall opens toward S, with G directly behind it.','A* orders cells by f = g + h. Manhattan distance ignores walls, so cells deep inside the cup look close to G (low h) even though they are a dead end. A* must expand the cup until f exceeds the cost of the real route around it.','A* heads straight into the cup, fills it, then backs out and goes around. Its path is still optimal because h never overestimates, but it expands many more cells than on an open map.','Admissibility decides whether A* is optimal. How well h reflects the real obstacles decides how efficient it is.'],
+prm:['Two rooms joined by a single 1-cell gap in a wall.','PRM needs samples in or near the gap, and with fixed k each node connects only to its k nearest neighbours, which are almost always in its own room. No edge crosses the gap, so the roadmap can split in two and the search finds no path.','Build the roadmap a few times: it can often report no path. Raising k or the sample count helps, and PRM* usually connects it.','Narrow passages are the classic weakness of sampling. PRM is only probabilistically complete: success is guaranteed only as the sample count grows without limit.'],
+prmstar:['A mud band across the direct line with a free detour, like the BFS map, but now the planner works in continuous space.','Path quality on a roadmap is limited by the samples. With few samples the roadmap path is jagged and may cut through mud. PRM* is asymptotically optimal: as n grows, its connection radius shrinks slowly enough to keep the roadmap connected, and the best path on it converges to the optimum.','Build with about 100, then 400, then 2000 samples and watch the path cost fall and the route straighten around the mud.','Optimal on the roadmap is not optimal in the world. PRM* closes that gap only in the limit.'],
+rrt:['Two rooms joined by a single 1-cell gap, with S and G on opposite sides.','RRT only grows through the gap when a random sample lands near it. The Voronoi bias pushes the tree toward unexplored space, but a thin gap still takes many samples. When it succeeds, it returns the first path it finds, which is jagged and not optimal.','Run it with different sample limits. A low limit often ends with no path, and the path it returns zigzags rather than taking the shortest line.','RRT is probabilistically complete but not optimal. It is quick to find a path, not a good one.'],
+rrtstar:['A wall with two gaps: a wide one off to the side (long route) and a 1-cell gap on the direct line (short route).','The wide gap is much easier to hit with random samples, so both RRT and RRT* usually find the long route first. RRT keeps that path. RRT* keeps sampling and rewires, so once a sample lands in the narrow gap it reroutes the tree and the cost drops.','Leave RRT* running. The path cost in the stats falls in jumps, and the green path switches from the long route to the short one.','RRT* is asymptotically optimal thanks to choose-parent and rewiring, at the price of more computation per iteration.']};
+function teachHtml(){const t=TEACH[algo];return '<b>Teaching note: why the '+LAB[algo]+' challenge maze?</b><p><b>The map.</b> '+t[0]+'</p><p><b>Why it is challenging.</b> '+t[1]+'</p><p><b>What to look for.</b> '+t[2]+'</p><p><b>Takeaway.</b> '+t[3]+'</p>'}
+let mode=1,drag=null;
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{mode=+b.dataset.m;document.querySelectorAll('[data-m]').forEach(o=>o.classList.toggle('on',o===b))});
+function cell(e){const r=cv.getBoundingClientRect();return[Math.min(W-1,Math.max(0,((e.clientX-r.left)/r.width*W)|0)),Math.min(H-1,Math.max(0,((e.clientY-r.top)/r.height*H)|0))]}
+function paint(e){const[x,y]=cell(e);
+ if(drag=='S'||drag=='G'){const p=drag=='S'?S:G,o=drag=='S'?G:S;if(!(x==o[0]&&y==o[1])){p[0]=x;p[1]=y;g[idx(x,y)]=0}}
+ else if(!(x==S[0]&&y==S[1])&&!(x==G[0]&&y==G[1]))g[idx(x,y)]=mode;
+ stop();st=null;rrt=null;ps=null;prm=null;gen=null;draw()}
+cv.onpointerdown=e=>{cv.setPointerCapture(e.pointerId);const[x,y]=cell(e);drag=(x==S[0]&&y==S[1])?'S':(x==G[0]&&y==G[1])?'G':'paint';paint(e)};
+cv.onpointermove=e=>{if(drag)paint(e)};cv.onpointerup=()=>drag=null;
+[[8,3],[8,4],[8,5],[8,6],[8,7],[8,8],[8,9],[9,9],[10,9],[11,9],[12,9],[12,8],[12,7],[12,6],[12,5],[15,5],[15,6],[15,7],[15,8],[15,9],[15,10],[15,11]].forEach(([x,y])=>g[idx(x,y)]=1);
+[[17,6],[17,7],[18,6],[18,7],[17,8],[18,8]].forEach(([x,y])=>g[idx(x,y)]=2);
+reset();
+</script></main></body></html>
