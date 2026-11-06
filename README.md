@@ -1,4 +1,4 @@
-##Graph Traversal Visualisation Game
+## Graph Traversal Visualisation Game
 
 <!--
 **Michael-Dilger/Michael-Dilger** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
